@@ -8,11 +8,14 @@ Role used to apply OpenShift objects to an existing OpenShift Cluster.
 	- [Requirements](#requirements)
 	- [Role Usage](#role-usage)
 		- [Sourcing OpenShift Object Definitions](#sourcing-openshift-object-definitions)
+		- [Template processing](#template-processing)
+		- [Using oc vs kubectl](#using-oc-vs-kubectl)
 		- [Sourcing a directory with files](#sourcing-a-directory-with-files)
 		- [Ordering of Objects in the inventory](#ordering-of-objects-in-the-inventory)
 		- [Privileged Objects](#privileged-objects)
 		- [Object Entries in the Inventory](#object-entries-in-the-inventory)
 		- [Override default actions with `action`](#override-default-actions-with-action)
+		- [Passing extra arguments to the client](#passing-extra-arguments-to-the-client)
 		- [Filtering content based on tags](#filtering-content-based-on-tags)
 		- [Deprovisioning](#deprovisioning)
 		- [Dependencies](#dependencies)
@@ -25,7 +28,7 @@ Role used to apply OpenShift objects to an existing OpenShift Cluster.
 
 ## Requirements
 
-A working OpenShift cluster that can be used to populate things like namespaces, policies and PVs (all require cluster-admin), or application level content (cluster-admin not required).
+A working OpenShift or Kubernetes cluster that can be used to populate things like namespaces, policies and PVs (all require cluster-admin), or application level content (cluster-admin not required).
 
 
 ## Role Usage
@@ -50,7 +53,7 @@ openshift_cluster_content:
     file: <file source>
     action: <apply|create> # Optional: Defaults to 'apply'
     no_log: <True|False> # Optional: no_log at content level if functionality desired. Defaults to False
-    tags: # Optional: Tags are only needed if `filter_tags` is used
+    tags: # Optional: Tags are only needed if `include_tags` or `exclude_tags` is used
     - tag1
     - tag2
     post_steps: # Optional: post-steps at content level can be added if desired
@@ -72,9 +75,60 @@ You have the choice of sourcing a `file` or a `template`. The `file` definition 
 
 **_TIP:_** Both `file` and `template` choices give you the option of defining target namespaces in the template manually, or adding the `namespace` variable alongside the template and params (where applicable).
 
-The `tags` definition is a list of tags that will be processed if the `filter_tags` variable/fact is supplied. See [Filtering content based on tags](README.md#filtering-content-based-on-tags) below for more details.
+The `tags` definition is a list of tags that will be processed if the `include_tags` variable/fact is supplied. See [Filtering content based on tags](README.md#filtering-content-based-on-tags) below for more details.
 
 The pre/post definitions are a set of pre and post roles to execute before/after a particular portion of the inventory is applied. This can be before/afterthe object levels - i.e.: before and after all of the content, or before/after certain files/templates at a content level.
+
+### Template processing
+Openshift-applier supports multiple template languages, that can be used to process your Openshift/Kubernetes Object Resources prior to being applied to the cluster.
+Both templating engines support both local and remote template location (http(s)).
+The currently supported template languages are:
+- [Openshift templates](https://docs.openshift.com/container-platform/latest/openshift_images/using-templates.html)
+- [Jinja templates](https://jinja.palletsprojects.com/)
+
+Openshift templates will require the use of `template` when sourcing your object resource(s). Use `params` to pass variables to the template.
+```
+openshift_cluster_content:
+- object:
+  content:
+  - name: Applying Openshift template
+    template: "{{ inventory_dir }}/../.openshift/templates/template.yml"
+    params:
+      PARAM1: foo
+      PARAM2: bar
+```
+
+Jinja templates can use either `file` or `template` when sourcing your object resources(s). Use `template` if your generated object resource is an Openshift template, otherwise use `file`.
+```
+openshift_cluster_content:
+- object:
+  content:
+  - name: Applying Openshift template
+    file: "https://example.com/openshift/files/file.j2"
+```
+Ansible variables are available and can be used in the Jinja template.
+Additional examples are available in the [test directory](https://github.com/redhat-cop/openshift-applier/tree/master/tests/files/jinja-templates)
+
+**NOTE: In order to use the jinja processing engine the file suffix must be '.j2'**
+
+### Using oc vs kubectl
+
+OpenShift-Applier is compatible with both `kubectl` and `oc` as a client binary. The client can be selected by setting `client: <oc|kubectl>` in any of your vars files, or as an inline ansible argument. **Default: `client: oc`**
+
+YAML Example:
+```
+client: kubectl
+
+openshift_cluster_content:
+...
+```
+
+INLINE Argument Example:
+```
+ansible-playbook -i .applier/ playbooks/openshift-cluster-seed.yml -e client=oc
+```
+
+**NOTE: If you have `client: kubectl`, but have OpenShift Templates in your inventory (defined by .object[*].content.template), you still need to have `oc` in your PATH.**
 
 ### Sourcing a directory with files
 
@@ -167,16 +221,57 @@ my_space_params_dict:
   NAMESPACE_DESCRIPTION: This is My Project
 ```
 
-Valid `action` values are `apply`, `create`, and `delete`.
+Valid `action` values are `apply`, `create`, `patch` and `delete`.
+
+#### Using patch
+
+Patching resources using applier can be done as follows:
+
+```yaml
+- object: single patch
+  content:
+  - name: patch a resource
+    file: "route1.yml" # File containing the resource you would like to patch
+    params: "patch.yml" # File containing the patch you would like to apply
+    action: patch
+```
+
+An example of what a patch file might look like is:
+
+```yaml
+metadata:
+  labels:
+    labelkey: labelvalue
+```
+
+### Passing extra arguments to the client
+
+OpenShift Applier supports passing additional argument flags to the client (`oc` or `kubectl`). This can be done by setting `.openshift_cluster_content.object.content[*].flag` to any string value.
+
+For example, to explicitly set the patch strategy (`--type`) on a patch action:
+
+```
+- object: json merge patch
+  content:
+  - name: perform json merge patch with flag
+    file: "https://k8s.io/examples/application/deployment-patch.yaml"
+    params: "{{ inventory_dir }}/../../files/patches/patch-demo-merge.yaml"
+    action: patch
+    flags: --type merge
+```
+
 
 ### Filtering content based on tags
 
-The `openshift-applier` supports the use of tags in the inventory (see example above) to allow for filtering which content should be processed and not. The `filter_tags` variable/fact takes a comma separated list of tags that will be processed and only content with matching tags will be applied.
+The `openshift-applier` supports the use of tags in the inventory (see example above) to allow for filtering which content should be processed and not. The `include_tags` and `exclude_tags` variables/facts take a comma separated list of tags that will be processed. The `include_tags` will apply content **only** with the matching tags, while `exclude_tags` will apply **anything but** the content with the matching tags.
 
-**_NOTE:_** Entries in the inventory without tags will not be processed when a valid list is supplied with the `filter_tags` option.
+**_NOTE:_** Entries in the inventory without tags will not be processed when a valid list of tags is supplied with `include_tags`.
+
+**_NOTE:_** If the same tag exists in both `include_tags` and `exclude_tags` the run will error out. Likewise, if tags from the two options annuls each other, the execution will also error out.
 
 ```
-filter_tags=tag1,tag2
+include_tags=tag1,tag2
+exclude_tags=tag3,tag4
 
 ```
 
@@ -195,7 +290,7 @@ The pre/post steps can be added at both the `object` level as well as the `conte
 
 In essence, the pre/post steps are ansible roles that gets executed in the order they are found in the inventory. These roles are sourced from the `galaxy_requirements` file part of the inventory. See the official [Ansible Galaxy docs for more details on the requirements yaml file](http://docs.ansible.com/ansible/latest/galaxy.html#installing-multiple-roles-from-a-file).
 
-**_NOTE:_** it is important that the repos used for pre/post roles have the `meta/main.yml` file setup correctly. See the [Ansible Galaxy docs](docs.ansible.com/ansible/latest/galaxy.html) for more details.
+**_NOTE:_** it is important that the repos used for pre/post roles have the `meta/main.yml` file setup correctly. See the [Ansible Galaxy docs](http://docs.ansible.com/ansible/latest/galaxy.html) for more details.
 
 For roles that requires input parameters, the implementation also supports supplying variables, as part of the inventory, to the pre/post steps. See example at the top for more details.
 
