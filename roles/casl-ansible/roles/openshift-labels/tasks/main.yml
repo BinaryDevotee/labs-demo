@@ -1,0 +1,18 @@
+---
+
+- name: "Prepend '-n' to the namespace, unless already set"
+  set_fact:
+    namespace_param: "{% if ((target_namespace|trim).find('-n') != 0) %}-n {% endif %}{{ target_namespace }}"
+  when:
+    - target_namespace|length > 0
+
+- name: "Apply label {{ label }} to object {{ target_object }}"
+  command: >
+    oc label --overwrite {{ target_object }} {{ target_name }} {{ label }} {{ namespace_param }}
+  when:
+  - target_object is defined
+  - target_object|trim != ''
+  - target_name is defined
+  - target_name|trim != ''
+  - label is defined
+  - label| trim != ''
