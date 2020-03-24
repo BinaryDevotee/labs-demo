@@ -1,8 +1,0 @@
----
-
-- name: "Remove temporary demo directory"
-  file:
-    state: absent
-    path: "{{ demo_src_tree }}"
-
-
