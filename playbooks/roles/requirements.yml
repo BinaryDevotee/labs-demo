@@ -1,0 +1,5 @@
+- src: https://github.com/redhat-cop/openshift-applier.git
+  scm: git
+
+- src: https://github.com/redhat-cop/casl-ansible.git
+  scm: git
