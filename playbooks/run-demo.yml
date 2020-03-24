@@ -15,8 +15,8 @@
   - openshift_token: "{{ demo_token }}"
   roles:
   - role: common
-  - role: {{ playbook_dir }}/roles/casl-ansible/roles/openshift-defaults
-  - role: {{ playbook_dir }}/roles/casl-ansible/roles/openshift-login
+  - role: ../roles/casl-ansible/roles/openshift-defaults
+  - role: ../roles/casl-ansible/roles/openshift-login
 
 - name: "Prepare the SCM for use with this demo env"
   hosts: seed-hosts
