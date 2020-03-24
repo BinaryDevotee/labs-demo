@@ -14,7 +14,7 @@
   - openshift_user: "{{ demo_username }}"
   - openshift_token: "{{ demo_token }}"
   roles:
-  - role: common
+  - role: ../roles/common
   - role: ../roles/casl-ansible/roles/openshift-defaults
   - role: ../roles/casl-ansible/roles/openshift-login
 
